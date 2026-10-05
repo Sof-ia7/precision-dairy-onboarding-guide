@@ -1,146 +1,106 @@
-#Precision Dairy: Read from Geddes to Grafana
-Containerized data-processing pipeline for the Purdue Precision Dairy dashboard workflow. The container reads mounted data from the cluster, generates Chapter 3 herd-characteristics tables and Chapter 4 feed-traits tables, saves CSV backup outputs, and optionally loads the generated outputs into PostgreSQL for Grafana visualization.
-##Repository contents
-```text
-.
-├── Containerfile
-├── requirements.txt
-├── run_all.py
-├── chapter3_herd_pipeline.py
-├── chapter4_feed_pipeline.py
-├── load_chapter_outputs_to_postgres.py
-└── README.md
+# Precision Dairy Pipeline: PASDE → PostgreSQL → Grafana
+
+Containerized data pipeline for the Purdue Dairy (ASREC) farm. It turns farm data stored in PASDE on the Geddes cluster into dashboards that farm staff and the nutritionist can open in a browser without cluster credentials.
+
+Based on the MS thesis *Container-Based Data Integration for Centralized Visualization* (S. Gerena Godoy, Purdue ABE, 2026). Chapters 3–5 describe the methods implemented here.
+
+> **Status: ready for deployment, not yet deployed.** The code runs and is tested on synthetic data. Deploying on Geddes needs a few cluster-side facts that the original author could not get. **Read [HANDOFF.md](HANDOFF.md) first.**
+
+---
+
+## What it does
+
 ```
-##What this container does
-The container runs the following workflow:
-Process Chapter 3 herd-characteristics data.
-Process Chapter 4 feed-traits data.
-Write CSV backup files to `/outputs/chapter3` and `/outputs/chapter4`.
-Load generated CSV outputs into PostgreSQL, when PostgreSQL environment variables are provided.
+Farm systems (Afimilk, PCDart, TMR Tracker, weather sensors)
+      │  Globus upload (manual today)
+      ▼
+PASDE Data Depot on Geddes  (/depot/agpasde/...)
+      │  mounted read-only
+      ▼
+Container 1: pipeline  (this repo's image, runs daily as a CronJob)
+   src/run_all.py
+     1. chapter3_herd_pipeline.py   → herd tables   (milk yield, DIM, body weight)
+     2. chapter4_feed_pipeline.py   → feed tables   (feeding accuracy, nutrient error)
+     3. load_chapter_outputs_to_postgres.py → PostgreSQL
+   CSV backups → /outputs/chapter3, /outputs/chapter4
+      ▼
+PostgreSQL  (always-on pod, schema "dairy")
+      ▼
+Container 2: Grafana OSS  (4 provisioned dashboards, read-only DB user)
+      ▼
+Farm staff: web browser
+```
 
-##Expected container paths
-The Python scripts use paths inside the container. The real cluster paths are mounted into these locations by IT when the container is run.
-Container path	Purpose
-`/data/afi`	Input folder for Afimilk/Chapter 3 files
-`/data/allWeights.csv`	Input body-weight file for Chapter 3
-`/data/feed-intake`	Input folder for TMR Tracker/feed-intake files
-`/data/nutrient-table.csv`	Input nutrient-composition table for Chapter 4
-`/outputs/chapter3`	CSV backup outputs for Chapter 3
-`/outputs/chapter4`	CSV backup outputs for Chapter 4
-Do not hard-code real cluster paths such as `/depot/...` inside the Python scripts. Those paths should be supplied only through Podman/Docker volume mounts.
+Weather is **not processed** here. The dashboards link to the existing ThingsBoard weather dashboard that Purdue IT runs.
 
+### Dashboards (thesis §5.5)
+| Dashboard | Filters | Panels |
+|---|---|---|
+| Animal Group Traits | group, time | avg milk yield with 80 % CI band, avg DIM, cattle per pen, monthly body weight |
+| Individual Animal Traits | animal ID, time | milk yield vs DIM, body weight vs DIM |
+| Feeding Accuracy | recipe, time | ingredient-level difference %, nutrient variation % (CP/NDF/starch), batch weight variation %, average delivered % (pie) |
+| Milk Yield, Nutrient Variation & Temperature | group, recipe, time | avg milk yield, nutrient variation, link to weather |
 
-##PostgreSQL configuration
-The PostgreSQL database is external to the container, typically hosted on the cluster. The container connects to it using environment variables.
-Required environment variables:
+## Repository layout
+```
+src/                      pipeline code (copied to /app in the image)
+tests/                    synthetic data generator, pytest suite, dashboard SQL check
+Containerfile             image for Container 1 (Python 3.11, non-root)
+compose.yaml              local stack: postgres + pipeline + grafana
+postgres/init/            creates schema + read-only Grafana role on first start
+grafana/                  provisioning (data source, dashboards) + dashboard generator
+deploy/                   Kubernetes manifests for Geddes (with placeholders)
+.github/workflows/ci.yml  tests, Postgres integration, image build → GHCR
+DEPLOY.md                 step-by-step deployment on Geddes
+HANDOFF.md                what is missing, constraints, who to ask
+```
+
+## Quick start (local, synthetic data, no cluster needed)
+
+Needs Python 3.11+, and Podman or Docker for the full stack.
+
 ```bash
-POSTGRES_HOST=
-POSTGRES_PORT=5432
-POSTGRES_DB=
-POSTGRES_USER=
-POSTGRES_PASSWORD=
-POSTGRES_SCHEMA=
-```
-Do not commit real passwords or `.env` files to GitHub.
+# 1. Tests only (no containers)
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt pytest
+pytest -q
 
-
-##Build the container
-From the repository root:
-```bash
-podman build -t precision-dairy-pipeline .
-```
-Docker can also be used if needed:
-```bash
-docker build -t precision-dairy-pipeline .
+# 2. Full stack: Postgres + pipeline + Grafana
+cp postgres.env.example postgres.env           # edit the passwords
+python tests/make_sample_data.py sample_data
+podman compose up --build                      # or: docker compose up --build
+# open http://localhost:3000 and log in with GF_SECURITY_ADMIN_* from postgres.env
 ```
 
+The pipeline container runs once and exits. Re-run it with `podman compose run --rm pipeline`.
 
-##Run the full workflow
-In production, IT should run the container on the cluster and mount the real cluster data locations into the expected container paths.
-Example Podman command:
-```bash
-podman run --rm \
-  --env-file postgres.env \
-  -v /real/cluster/afi/path:/data/afi:ro \
-  -v /real/cluster/allWeights.csv:/data/allWeights.csv:ro \
-  -v /real/cluster/feed/path:/data/feed-intake:ro \
-  -v /real/cluster/nutrient-table.csv:/data/nutrient-table.csv:ro \
-  -v /real/cluster/outputs:/outputs \
-  precision-dairy-pipeline
-```
-The default command in the container runs:
-```bash
-python run_all.py
-```
+## Container contract
 
+| Container path | Contents | Override env var |
+|---|---|---|
+| `/data/afi` | Afimilk daily `*.parquet` files (date in the file name `YYYYMMDD` / `YYYY-MM-DD` if there is no date column) | `CH3_AFI_DIR` |
+| `/data/allWeights.csv` | PCDart body weights | `CH3_WEIGHTS_CSV` |
+| `/data/feed-intake` | TMR Tracker files (csv/tsv/txt/parquet/xlsx, read recursively) | `CH4_FEED_INTAKE_DIR` |
+| `/data/nutrient-table.csv` | nutrient composition table (CP, NDF, starch % DM, with a date; the latest row per ingredient is used) | `CH4_NUTRIENT_TABLE` |
+| `/outputs/chapter3`, `/outputs/chapter4` | CSV backups (writable) | `CH3_OUTPUT_DIR`, `CH4_OUTPUT_DIR` |
 
-##Dry run
-To check the workflow commands without processing data:
-```bash
-podman run --rm precision-dairy-pipeline python run_all.py --dry-run
-```
+Database: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_SCHEMA`. If `POSTGRES_HOST` is unset, the database load is skipped and only CSVs are written.
 
+Useful flags: `python /app/run_all.py --dry-run | --skip-chapter3 | --skip-chapter4 | --skip-postgres`.
 
-##Run selected parts
-Run Chapter 3 only:
-```bash
-python run_all.py --skip-chapter4 --skip-postgres
-```
-Run Chapter 4 only:
-```bash
-python run_all.py --skip-chapter3 --skip-postgres
-```
-Run both chapters but do not load PostgreSQL:
-```bash
-python run_all.py --skip-postgres
-```
-Load existing Chapter 3 and Chapter 4 CSV outputs into PostgreSQL:
-```bash
-python load_chapter_outputs_to_postgres.py \
-  --chapter3-dir /outputs/chapter3 \
-  --chapter4-dir /outputs/chapter4 \
-  --if-exists replace
-```
+### PostgreSQL tables (schema `dairy`, snake_case columns)
+- Chapter 3: `chapter3_yield_and_dim`, `chapter3_dim_weights_merged`, `chapter3_yield_group_day`, `chapter3_animal_month_yield`, `chapter3_yield_group_month`, `chapter3_cow_month_weight`, `chapter3_weight_group`, `chapter3_yield_per_cow`
+- Chapter 4: `chapter4_filtered_feed_intake`, `chapter4_dry_weight_participation`, `chapter4_weight_difference_ing`, `chapter4_error_by_weight`, `chapter4_nutrient_delivery_by_ingredient`, `chapter4_nutrient_error_by_formula`
 
-##Output tables
-Chapter 3 expected PostgreSQL tables
-```text
-chapter3_yield_and_dim
-chapter3_dim_weights_merged
-chapter3_yield_group_day
-chapter3_yield_group_month
-chapter3_weight_group
-chapter3_yield_per_cow
-```
-Chapter 4 expected PostgreSQL tables
-```text
-chapter4_filtered_feed_intake
-chapter4_dry_weight_participation
-chapter4_weight_difference_ing
-chapter4_error_by_weight
-chapter4_nutrient_delivery_by_ingredient
-chapter4_nutrient_error_by_formula
-```
+Tables are replaced on every run. **Grafana queries depend on these names.** If you rename anything, update `grafana/build_dashboards.py`, regenerate the dashboards, and let CI's dashboard-SQL check confirm the result.
 
+## Methods (summary)
+- **Herd (Ch. 3):** mean, SD (n−1), SE and an **80 % t confidence interval** (only when n ≥ 2) by group×day, group×month (via cow-month means) and per cow. Body weights are matched by cow and month and are **not interpolated** to daily values.
+- **Feed (Ch. 4):** all on a **dry matter** basis.
+  - Batch weights (eq. 4.1) and ingredient shares (eq. 4.2)
+  - Ingredient error (eq. 4.3) and batch error (eq. 4.4)
+  - Nutrient delivery and error per ingredient and per formula for crude protein, NDF and starch (eqs. 4.5–4.9)
+- **Not done (by design):** no filling of missing values, no outlier removal, no feed refusals, no alerts.
 
-##Development notes
-This repository should contain only code and container configuration. Do not commit raw farm data, generated CSV outputs, PostgreSQL credentials, or cluster-specific secrets.
-Recommended `.gitignore` entries:
-```text
-__pycache__/
-.ipynb_checkpoints/
-outputs/
-*.env
-postgres.env
-*.csv
-```
-If a small reference CSV is intentionally needed for testing, place it in a dedicated test-data folder and document it clearly.
-
-
-##Troubleshooting
-`localhost` does not connect to PostgreSQL
-Inside a container, `localhost` means the container itself. If PostgreSQL is running on the cluster host, IT should either run the container with host networking or provide the correct PostgreSQL hostname/service address.
-No files found
-Check that the real cluster folders were mounted into the correct container paths. For example, the script expects feed-intake data at `/data/feed-intake`, not at the original `/depot/...` path.
-CSV outputs are created but PostgreSQL tables are missing
-Confirm that all `POSTGRES_*` environment variables are available inside the container and that the database user has permission to create or replace tables in the target schema.
+## Origin
+Imported from `PrecisionDairy--Read-from-Geddes-to-Grafana` (commit `cb0a4b7`). The first commit of this repo is that code unchanged; later commits fix bugs and add deployment. See `git log`.
