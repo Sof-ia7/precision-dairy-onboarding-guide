@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/precision-dairy-pipeline
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dairy
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: dairy
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dairy" --health-interval 5s --health-retries 20
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: dairy
+      POSTGRES_USER: dairy
+      POSTGRES_PASSWORD: ci-password
+      POSTGRES_SCHEMA: dairy
+      GRAFANA_DB_USER: grafana_reader
+      GRAFANA_DB_PASSWORD: ci-reader
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pytest
+
+      - name: Unit + end-to-end tests (synthetic data)
+        run: pytest -q
+
+      - name: Create schema and read-only Grafana role
+        env:
+          PGHOST: localhost
+          PGPASSWORD: ci-password
+        run: sh postgres/init/01-roles.sh
+
+      - name: Full run into PostgreSQL
+        run: |
+          python tests/make_sample_data.py sample_data
+          python src/run_all.py \
+            --afi-dir sample_data/afi --weights-csv sample_data/allWeights.csv \
+            --feed-intake-dir sample_data/feed-intake --nutrient-table sample_data/nutrient-table.csv \
+            --chapter3-output-dir outputs/chapter3 --chapter4-output-dir outputs/chapter4
+
+      - name: Grafana's read-only user can query every dashboard table
+        env:
+          PGHOST: localhost
+          PGUSER: grafana_reader
+          PGPASSWORD: ci-reader
+          PGDATABASE: dairy
+        run: |
+          for t in chapter3_yield_and_dim chapter3_dim_weights_merged chapter3_yield_group_day \
+                   chapter3_weight_group chapter4_weight_difference_ing chapter4_error_by_weight \
+                   chapter4_dry_weight_participation chapter4_nutrient_error_by_formula; do
+            psql -v ON_ERROR_STOP=1 -tAc "SELECT '$t', count(*) FROM dairy.$t"
+          done
+
+      - name: Every Grafana dashboard query runs and returns rows
+        run: python tests/check_dashboard_sql.py
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Containerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+      - name: Smoke test the built image
+        if: github.event_name != 'pull_request'
+        run: docker run --rm ${{ fromJSON(steps.meta.outputs.json).tags[0] }} python /app/run_all.py --dry-run

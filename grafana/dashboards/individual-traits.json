@@ -1,0 +1,114 @@
+{
+  "uid": "dairy-individual-traits",
+  "title": "Individual Animal Traits",
+  "tags": [
+    "precision-dairy"
+  ],
+  "editable": true,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "refresh": "",
+  "templating": {
+    "list": [
+      {
+        "name": "animal",
+        "label": "Farm animal ID",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "dairy-pg"
+        },
+        "query": "SELECT DISTINCT farm_animal_id FROM dairy.chapter3_yield_and_dim ORDER BY 1",
+        "definition": "SELECT DISTINCT farm_animal_id FROM dairy.chapter3_yield_and_dim ORDER BY 1",
+        "refresh": 1,
+        "sort": 3,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Milk yield over days in milk",
+      "description": "",
+      "type": "trend",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT dim AS \"DIM\", yield AS \"Milk yield\" FROM dairy.chapter3_yield_and_dim\nWHERE farm_animal_id::text = '$animal' AND $__timeFilter(date) AND dim IS NOT NULL ORDER BY dim"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lb/day",
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {
+        "xField": "DIM"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Body weight over days in milk",
+      "description": "",
+      "type": "trend",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT dim AS \"DIM\", weight AS \"Body weight\" FROM dairy.chapter3_dim_weights_merged\nWHERE farm_animal_id::text = '$animal' AND $__timeFilter(file_date) AND dim IS NOT NULL AND weight IS NOT NULL ORDER BY dim"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lb",
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {
+        "xField": "DIM"
+      }
+    }
+  ]
+}

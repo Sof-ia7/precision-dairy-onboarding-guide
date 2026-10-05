@@ -1,0 +1,18 @@
+# Grafana data source, filled from environment variables at startup.
+# Grafana connects with a READ-ONLY database user (see postgres/init/01-roles.sh).
+apiVersion: 1
+datasources:
+  - name: DairyPostgres
+    uid: dairy-pg
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: ${POSTGRES_HOST}:${POSTGRES_PORT}
+    user: ${GRAFANA_DB_USER}
+    isDefault: true
+    editable: false
+    jsonData:
+      database: ${POSTGRES_DB}
+      sslmode: disable
+      postgresVersion: 1600
+    secureJsonData:
+      password: ${GRAFANA_DB_PASSWORD}

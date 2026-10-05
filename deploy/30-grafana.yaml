@@ -1,0 +1,113 @@
+# Grafana OSS (Container 2): read-only dashboards for farm staff.
+# Data source and the 4 dashboards are provisioned from ConfigMaps (see DEPLOY.md),
+# so a rebuilt Grafana looks exactly the same.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: REPLACE-WITH-CEPH-BLOCK-STORAGECLASS
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      securityContext:
+        runAsUser: 472       # "grafana" user in the official image
+        runAsGroup: 472
+        fsGroup: 472
+        runAsNonRoot: true
+      containers:
+        - name: grafana
+          # Official Grafana OSS image, pulled through the Geddes Docker Hub cache.
+          image: geddes-registry.rcac.purdue.edu/docker-hub-cache/grafana/grafana:11.6.0
+          envFrom:
+            - secretRef:
+                name: dairy-db
+          env:
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+            # Uncomment to let farm staff view dashboards without logging in:
+            # - name: GF_AUTH_ANONYMOUS_ENABLED
+            #   value: "true"
+            # - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+            #   value: Viewer
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /etc/grafana/dashboards
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: grafana-data
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+spec:
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+# Exposes Grafana at a URL. The host name and ingress class depend on Geddes
+# conventions: check an existing ingress in Rancher or ask RCAC.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+spec:
+  ingressClassName: REPLACE-WITH-INGRESS-CLASS
+  rules:
+    - host: REPLACE-dairy-dashboards.geddes.rcac.purdue.edu
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000

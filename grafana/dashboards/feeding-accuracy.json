@@ -1,0 +1,198 @@
+{
+  "uid": "dairy-feeding-accuracy",
+  "title": "Feeding Accuracy",
+  "tags": [
+    "precision-dairy"
+  ],
+  "editable": true,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "refresh": "",
+  "templating": {
+    "list": [
+      {
+        "name": "recipe",
+        "label": "Recipe",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "dairy-pg"
+        },
+        "query": "SELECT DISTINCT recipe_display_name FROM dairy.chapter4_error_by_weight ORDER BY 1",
+        "definition": "SELECT DISTINCT recipe_display_name FROM dairy.chapter4_error_by_weight ORDER BY 1",
+        "refresh": 1,
+        "sort": 3,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Ingredient-level difference (%)",
+      "description": "Eq. 4.3: (actual share - called share) / called share x 100. Positive = over-delivered.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT feeding_date AS time, ingredient_code AS metric, participation_difference_pct AS value\nFROM dairy.chapter4_weight_difference_ing\nWHERE recipe_display_name = '$recipe' AND $__timeFilter(feeding_date) ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "title": "Nutrient variation (%)",
+      "description": "Eq. 4.9: error in ration nutrient concentration (crude protein, NDF, starch).",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT feeding_date AS time,\n  total_protein_error_pct AS \"Crude protein\",\n  total_andfom_error_pct AS \"NDF\",\n  total_starch_error_pct AS \"Starch\"\nFROM dairy.chapter4_nutrient_error_by_formula\nWHERE recipe_display_name = '$recipe' AND $__timeFilter(feeding_date)\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "title": "Total batch weight variation (%)",
+      "description": "Eq. 4.4: (actual batch DM - called batch DM) / called x 100.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT feeding_date AS time, error_by_weight_pct AS \"Batch weight error\"\nFROM dairy.chapter4_error_by_weight\nWHERE recipe_display_name = '$recipe' AND $__timeFilter(feeding_date) ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "Average delivered percentages",
+      "description": "",
+      "type": "piechart",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT ingredient_code AS \"Ingredient\", AVG(actual_pct_participation) AS \"Avg delivered %\"\nFROM dairy.chapter4_dry_weight_participation\nWHERE recipe_display_name = '$recipe' AND $__timeFilter(feeding_date)\nGROUP BY 1 ORDER BY 2 DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": true,
+          "calcs": [],
+          "fields": ""
+        },
+        "pieType": "pie",
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value"
+          ]
+        }
+      }
+    }
+  ]
+}

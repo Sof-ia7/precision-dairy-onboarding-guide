@@ -1,0 +1,83 @@
+# Processing container (Container 1), run once a day.
+# Reads PASDE files (read-only), writes CSV backups to /outputs, loads PostgreSQL.
+#
+# PLACEHOLDERS to fill in before applying:
+#   - image: where the image was pushed (GHCR or Harbor)
+#   - the "pasde" volume: HOW the Data Depot is exposed to pods is UNKNOWN.
+#     Ask RCAC. Two common options are sketched below.
+#   - the CH3_*/CH4_* paths: real locations under the mounted Data Depot.
+#     Only the Afimilk path is known.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pipeline-outputs
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: REPLACE-WITH-CEPH-STORAGECLASS
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pipeline
+spec:
+  schedule: "0 6 * * *"          # daily 06:00; TMR data arrives ~weekly, so daily is plenty
+  timeZone: America/Indiana/Indianapolis
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            runAsNonRoot: true
+          # imagePullSecrets:          # only for a PRIVATE Harbor project
+          #   - name: harbor-pull
+          containers:
+            - name: pipeline
+              image: ghcr.io/REPLACE-OWNER/precision-dairy-pipeline:REPLACE-TAG
+              envFrom:
+                - secretRef:
+                    name: dairy-db
+              env:
+                # Paths inside the container. The Data Depot is mounted at /depot.
+                - name: CH3_AFI_DIR
+                  value: /depot/agpasde/data/Reference/purdue/asrec/dairy/afimilk-daily
+                - name: CH3_WEIGHTS_CSV
+                  value: /depot/REPLACE/allWeights.csv
+                - name: CH4_FEED_INTAKE_DIR
+                  value: /depot/REPLACE/feed-intake
+                - name: CH4_NUTRIENT_TABLE
+                  value: /depot/REPLACE/nutrient-table.csv
+              resources:
+                requests: {cpu: 500m, memory: 1Gi}
+                limits: {cpu: "2", memory: 4Gi}
+              volumeMounts:
+                - name: pasde
+                  mountPath: /depot
+                  readOnly: true
+                - name: outputs
+                  mountPath: /outputs
+          volumes:
+            - name: outputs
+              persistentVolumeClaim:
+                claimName: pipeline-outputs
+            # ---- Data Depot: choose ONE option after asking RCAC ----
+            # Option A: an existing PVC that exposes the Data Depot in this namespace
+            - name: pasde
+              persistentVolumeClaim:
+                claimName: REPLACE-WITH-DATA-DEPOT-PVC
+                readOnly: true
+            # Option B: a host path, only if RCAC allows hostPath volumes
+            # - name: pasde
+            #   hostPath:
+            #     path: /depot
+            #     type: Directory

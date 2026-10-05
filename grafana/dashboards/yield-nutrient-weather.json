@@ -1,0 +1,195 @@
+{
+  "uid": "dairy-yield-nutrient-weather",
+  "title": "Milk Yield, Nutrient Variation and Temperature",
+  "tags": [
+    "precision-dairy"
+  ],
+  "editable": true,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "refresh": "",
+  "templating": {
+    "list": [
+      {
+        "name": "group",
+        "label": "Group",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "dairy-pg"
+        },
+        "query": "SELECT DISTINCT \"group\" FROM dairy.chapter3_yield_group_day ORDER BY 1",
+        "definition": "SELECT DISTINCT \"group\" FROM dairy.chapter3_yield_group_day ORDER BY 1",
+        "refresh": 1,
+        "sort": 3,
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "recipe",
+        "label": "Recipe",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "dairy-pg"
+        },
+        "query": "SELECT DISTINCT recipe_display_name FROM dairy.chapter4_error_by_weight ORDER BY 1",
+        "definition": "SELECT DISTINCT recipe_display_name FROM dairy.chapter4_error_by_weight ORDER BY 1",
+        "refresh": 1,
+        "sort": 3,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Weather (ThingsBoard)",
+      "type": "link",
+      "url": "https://REPLACE-WITH-THINGSBOARD-WEATHER-DASHBOARD-URL",
+      "targetBlank": true,
+      "icon": "external link"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Average milk yield (80% CI)",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT day AS time, avg_daily_yield AS \"Avg milk yield\", ci_lower AS \"CI lower\", ci_upper AS \"CI upper\"\nFROM dairy.chapter3_yield_group_day\nWHERE \"group\"::text = '$group' AND $__timeFilter(day)\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lb/day",
+          "custom": {}
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CI upper"
+            },
+            "properties": [
+              {
+                "id": "custom.fillBelowTo",
+                "value": "CI lower"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 20
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CI lower"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "title": "Nutrient variation (%)",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT feeding_date AS time,\n  total_protein_error_pct AS \"Crude protein\",\n  total_andfom_error_pct AS \"NDF\",\n  total_starch_error_pct AS \"Starch\"\nFROM dairy.chapter4_nutrient_error_by_formula\nWHERE recipe_display_name = '$recipe' AND $__timeFilter(feeding_date)\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "type": "text",
+      "title": "Weather",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Barn and outdoor temperature/humidity are on the [ThingsBoard weather dashboard](https://REPLACE-WITH-THINGSBOARD-WEATHER-DASHBOARD-URL) (managed by Purdue IT)."
+      }
+    }
+  ]
+}

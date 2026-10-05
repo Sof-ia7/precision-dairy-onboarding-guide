@@ -1,0 +1,234 @@
+{
+  "uid": "dairy-group-traits",
+  "title": "Animal Group Traits",
+  "tags": [
+    "precision-dairy"
+  ],
+  "editable": true,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "refresh": "",
+  "templating": {
+    "list": [
+      {
+        "name": "group",
+        "label": "Group",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "dairy-pg"
+        },
+        "query": "SELECT DISTINCT \"group\" FROM dairy.chapter3_yield_group_day ORDER BY 1",
+        "definition": "SELECT DISTINCT \"group\" FROM dairy.chapter3_yield_group_day ORDER BY 1",
+        "refresh": 1,
+        "sort": 3,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Average milk yield (80% CI)",
+      "description": "Daily mean milk yield of the selected group. Shaded band = 80% t confidence interval (n >= 2).",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT day AS time, avg_daily_yield AS \"Avg milk yield\", ci_lower AS \"CI lower\", ci_upper AS \"CI upper\"\nFROM dairy.chapter3_yield_group_day\nWHERE \"group\"::text = '$group' AND $__timeFilter(day)\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lb/day",
+          "custom": {}
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CI upper"
+            },
+            "properties": [
+              {
+                "id": "custom.fillBelowTo",
+                "value": "CI lower"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 20
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CI lower"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "title": "Average days in milk",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT day AS time, avg_dim AS \"Avg DIM\" FROM dairy.chapter3_yield_group_day\nWHERE \"group\"::text = '$group' AND $__timeFilter(day) ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d",
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "title": "Cattle per pen",
+      "description": "Number of animals contributing records each day. Sudden changes affect the averages.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT day AS time, n_animals AS \"Animals\" FROM dairy.chapter3_yield_group_day\nWHERE \"group\"::text = '$group' AND $__timeFilter(day) ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "",
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "Average body weight (monthly)",
+      "description": "Monthly group mean body weight (PCDart). Less frequent than milk yield.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "dairy-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "dairy-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT make_date(year::int, month_num::int, 1)::timestamp AS time, avg_weight AS \"Avg weight\"\nFROM dairy.chapter3_weight_group\nWHERE \"group\"::text = '$group' AND $__timeFilter(make_date(year::int, month_num::int, 1)::timestamp) ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lb",
+          "custom": {
+            "drawStyle": "line",
+            "showPoints": "always"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

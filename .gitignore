@@ -1,0 +1,13 @@
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# Never commit farm data, outputs or credentials
+sample_data/
+outputs/
+data/
+*.env
+!*.env.example
+deploy/templates/secrets.yaml

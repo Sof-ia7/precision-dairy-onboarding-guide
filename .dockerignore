@@ -1,0 +1,12 @@
+.git
+.github
+sample_data
+outputs
+data
+*.env
+deploy
+grafana
+docs
+tests
+__pycache__
+.pytest_cache

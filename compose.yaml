@@ -1,0 +1,54 @@
+# Local test stack: PostgreSQL + processing pipeline + Grafana, on synthetic data.
+#
+#   cp postgres.env.example postgres.env              # then edit the passwords
+#   python tests/make_sample_data.py sample_data      # synthetic input files
+#   podman compose up --build                         # or: docker compose up --build
+#   open http://localhost:3000                        # Grafana (admin login from postgres.env)
+#
+# To use real data, change the ./sample_data paths below to the real folders.
+# On Geddes the same three services are defined as Kubernetes objects in deploy/.
+
+services:
+  postgres:
+    image: docker.io/library/postgres:16
+    env_file: postgres.env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro,Z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 20
+
+  pipeline:
+    build: .
+    image: precision-dairy-pipeline:dev
+    env_file: postgres.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./sample_data/afi:/data/afi:ro,Z
+      - ./sample_data/allWeights.csv:/data/allWeights.csv:ro,Z
+      - ./sample_data/feed-intake:/data/feed-intake:ro,Z
+      - ./sample_data/nutrient-table.csv:/data/nutrient-table.csv:ro,Z
+      - outputs:/outputs
+    restart: "no"
+
+  grafana:
+    image: docker.io/grafana/grafana:11.6.0
+    env_file: postgres.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro,Z
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro,Z
+
+volumes:
+  pgdata:
+  outputs:
+  grafana-data:

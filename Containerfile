@@ -1,37 +1,39 @@
-# BUILDER
- # FROM sets the Docker image that is a a standalone, executable file used to create a container. It changes depending on the type of app (python, ubuntu, php, etc)
-   # Look for the images here : https://hub.docker.com/
- # LABEL tells GitHub where the source is located
- # WORKDIR defines a virtual environment to work
-FROM python:3.14.0-slim-bookworm as builder
-LABEL org.opencontainers.image.source="https://github.com/oats-center/ASREC"
-WORKDIR /usr/src/app
+# Processing container (Container 1): runs Chapter 3 -> Chapter 4 -> PostgreSQL load.
+#
+# Build (anywhere):
+#   podman build -t precision-dairy-pipeline:dev .
+# Build on campus/VPN through the Geddes Docker Hub cache (avoids Docker Hub rate limits):
+#   podman build --build-arg BASE=geddes-registry.rcac.purdue.edu/docker-hub-cache/library/python:3.11-slim \
+#     -t precision-dairy-pipeline:dev .
 
-# Activate virtualenv
+ARG BASE=python:3.11-slim
+
+# ---- builder: install dependencies into a virtualenv ----
+FROM ${BASE} AS builder
 RUN python -m venv /opt/venv
-
-# Make sure we use the virtualenv
 ENV PATH="/opt/venv/bin:$PATH"
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy requirements and build with 'pip' in the directory defined at WORKDIR
-COPY requirements.txt ./
-# Since it is using a python image, it is possible to run 'pip' because the image contains the programming languaje and the packages administrator, which means that operates as a python interface
-RUN pip install --no-cache-dir -r requirements.txt
+# ---- runtime: copy the virtualenv and the scripts only ----
+FROM ${BASE} AS runtime
+LABEL org.opencontainers.image.title="precision-dairy-pipeline" \
+      org.opencontainers.image.description="Purdue Precision Dairy: PASDE data -> herd & feed tables -> PostgreSQL for Grafana"
 
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# RUNTIME
-FROM python:3.14.0-slim-bookworm as runtime
-WORKDIR /usr/src/app
-
-# Copy compiled venv from builder
 COPY --from=builder /opt/venv /opt/venv
 
-# Make sure we use the virtualenv
-ENV PATH="/opt/venv/bin:$PATH"
+WORKDIR /app
+COPY src/ /app/
 
+# Non-root user (Kubernetes clusters commonly forbid root containers).
+# Mount points: /data (read-only inputs) and /outputs (CSV backups).
+RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin app \
+ && mkdir -p /data /outputs/chapter3 /outputs/chapter4 \
+ && chown -R app:app /outputs
+USER 10001
 
-
-# Copy the script that has the app we want to execute
-# CMD allows to run  what we ant to execute, the first parameter is the 
-COPY watcher.py .
-CMD [ "python", "./run_all.py" ]
+CMD ["python", "/app/run_all.py"]
