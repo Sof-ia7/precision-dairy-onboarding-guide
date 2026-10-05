@@ -118,9 +118,14 @@ WHERE "group"::text = '$group' AND $__timeFilter(day) ORDER BY 1""", (12, 0, 12,
 WHERE "group"::text = '$group' AND $__timeFilter(day) ORDER BY 1""", (0, 9, 12, 9),
               description="Number of animals contributing records each day. Sudden changes affect the averages."),
         panel(4, "Average body weight (monthly)", "timeseries",
-              f"""SELECT make_date(year::int, month_num::int, 1)::timestamp AS time, avg_weight AS "Avg weight"
-FROM {SCHEMA}.chapter3_weight_group
-WHERE "group"::text = '$group' AND $__timeFilter(make_date(year::int, month_num::int, 1)::timestamp) ORDER BY 1""",
+              # Grafana macros split their argument on commas, so build the month
+              # date in a subquery and filter on the plain column.
+              f"""SELECT month_start AS time, avg_weight AS "Avg weight"
+FROM (
+  SELECT make_date(year::int, month_num::int, 1)::timestamp AS month_start, avg_weight, "group"
+  FROM {SCHEMA}.chapter3_weight_group
+) w
+WHERE "group"::text = '$group' AND $__timeFilter(month_start) ORDER BY 1""",
               (12, 9, 12, 9), unit="lb", custom={"drawStyle": "line", "showPoints": "always"},
               description="Monthly group mean body weight (PCDart). Less frequent than milk yield."),
     ])

@@ -215,7 +215,7 @@
           "format": "time_series",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT make_date(year::int, month_num::int, 1)::timestamp AS time, avg_weight AS \"Avg weight\"\nFROM dairy.chapter3_weight_group\nWHERE \"group\"::text = '$group' AND $__timeFilter(make_date(year::int, month_num::int, 1)::timestamp) ORDER BY 1"
+          "rawSql": "SELECT month_start AS time, avg_weight AS \"Avg weight\"\nFROM (\n  SELECT make_date(year::int, month_num::int, 1)::timestamp AS month_start, avg_weight, \"group\"\n  FROM dairy.chapter3_weight_group\n) w\nWHERE \"group\"::text = '$group' AND $__timeFilter(month_start) ORDER BY 1"
         }
       ],
       "fieldConfig": {

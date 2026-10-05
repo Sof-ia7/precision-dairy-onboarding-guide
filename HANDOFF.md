@@ -10,9 +10,9 @@ This document is for the next person who picks up the project. The original auth
 |---|---|
 | Chapter 3 herd pipeline | ✅ works on synthetic data; matches the thesis statistics (80 % t CI, n ≥ 2) |
 | Chapter 4 feed pipeline | ✅ works; reproduces thesis Tables 4.3/4.4 (e.g. DRYCOW 2025-12-16: 1708 vs 1684 lb DM → 1.43 %) |
-| PostgreSQL loader | ✅ stable table names, snake_case columns; dashboard SQL tested locally (DuckDB). CI also tests it against a real PostgreSQL once the repo is on GitHub. |
-| Container image | ⚠️ Containerfile ready (Python 3.11, non-root) but **not built yet**: no Podman/Docker on the author's machine. The CI workflow builds it and pushes to GHCR on the first push to GitHub. |
-| Grafana dashboards | ⚠️ **reconstructed** from the thesis text. The originals were never exported. Every query is tested, but the layout may differ from the thesis figures. |
+| PostgreSQL loader | ✅ stable table names, snake_case columns; tested with Podman against PostgreSQL 16, including the read-only Grafana user (can read, cannot write) |
+| Container image | ✅ builds with Podman 5.7 and runs the full workflow as non-root (exit 0). CI will also build it and push it to GHCR. |
+| Grafana dashboards | ⚠️ **reconstructed** from the thesis text (the originals were never exported). All 4 load in Grafana 11.6 and all 12 panels return data through Grafana (`tests/check_grafana_panels.py`), but the visual layout has not been compared with thesis Figures 5.3–5.6. |
 | Kubernetes manifests | ⚠️ written, **never applied**: placeholders still need values (see §2) |
 | Deployed on Geddes | ❌ not done |
 | Real data | ❌ never run in this repo. Tested only on synthetic data that follows the thesis tables. |

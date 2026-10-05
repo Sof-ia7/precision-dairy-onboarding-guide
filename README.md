@@ -74,6 +74,15 @@ podman compose up --build                      # or: docker compose up --build
 
 The pipeline container runs once and exits. Re-run it with `podman compose run --rm pipeline`.
 
+**The sample data covers 2025-11-20 → 2025-12-19.** Dashboards open on "last 90 days", so set the time picker to that range or you will see "No data". For example:
+`http://localhost:3000/d/dairy-group-traits?from=2025-11-15&to=2025-12-31`
+
+Check that every panel returns data through Grafana:
+```bash
+GF_SECURITY_ADMIN_PASSWORD=<from postgres.env> python tests/check_grafana_panels.py
+```
+Stop everything with `podman compose down` (add `-v` to also delete the database volume).
+
 ## Container contract
 
 | Container path | Contents | Override env var |
