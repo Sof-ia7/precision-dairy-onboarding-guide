@@ -8,7 +8,7 @@ Order:
   3. Load all generated CSV outputs into PostgreSQL
 
 This file is intentionally thin. The chapter scripts do the calculations; this
-script only coordinates them so IT can run one container command.
+script only coordinates them so the whole workflow is one container command.
 
 Default container paths:
   Chapter 3 input:       /data/afi
@@ -133,7 +133,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             str(args.afi_dir),
             "--output-dir",
             str(args.chapter3_output_dir),
-            "--confidence-level",
+            "--confidence",
             str(args.confidence_level),
         ]
         if not args.no_weights_csv:
@@ -164,6 +164,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             cmd.append("--group-by-pen")
         run_command(cmd, dry_run=args.dry_run)
 
+    if not args.skip_postgres and not os.getenv("POSTGRES_HOST"):
+        LOGGER.warning("POSTGRES_HOST is not set; skipping the PostgreSQL load. CSV outputs were still written.")
+        args.skip_postgres = True
+
     if not args.skip_postgres:
         cmd = [
             python,
@@ -189,4 +193,8 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except subprocess.CalledProcessError as exc:
+        LOGGER.error("Step failed with exit code %s: %s", exc.returncode, " ".join(map(str, exc.cmd)))
+        raise SystemExit(exc.returncode or 1)

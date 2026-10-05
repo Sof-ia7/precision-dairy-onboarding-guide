@@ -90,8 +90,34 @@ def create_schema_if_needed(engine: Engine, schema: str) -> None:
         conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
 
 
+# Stable table names for the Chapter 3 CSV files. Grafana queries depend on these
+# names, so map them explicitly instead of deriving them from the file names.
+CHAPTER3_TABLE_NAMES = {
+    "table_3_1_yield_and_dim": "chapter3_yield_and_dim",
+    "table_3_2_dim_weights_merged": "chapter3_dim_weights_merged",
+    "table_3_3_yield_group_day": "chapter3_yield_group_day",
+    "animal_month_yield": "chapter3_animal_month_yield",
+    "table_3_4_yield_group_month": "chapter3_yield_group_month",
+    "cow_month_weight": "chapter3_cow_month_weight",
+    "table_3_5_weight_group": "chapter3_weight_group",
+    "per_cow_daily_yield_summary": "chapter3_yield_per_cow",
+}
+
+
+def clean_column_name(name: object) -> str:
+    """Convert a CSV header such as 'Avg Daily Yield (lb/day)' to 'avg_daily_yield_lb_day'."""
+    base = re.sub(r"[^a-z0-9]+", "_", str(name).strip().lower()).strip("_")
+    if not base:
+        base = "col"
+    if base[0].isdigit():
+        base = f"c_{base}"
+    return base[:63]
+
+
 def clean_table_name(name: str, prefix: str = "") -> str:
     """Convert a file stem to a safe PostgreSQL table name."""
+    if prefix.strip().lower() == "chapter3" and name in CHAPTER3_TABLE_NAMES:
+        return CHAPTER3_TABLE_NAMES[name]
     base = name.strip().lower()
     base = re.sub(r"[^a-z0-9]+", "_", base)
     base = re.sub(r"_+", "_", base).strip("_")
@@ -138,6 +164,10 @@ def coerce_obvious_dates(df: pd.DataFrame) -> pd.DataFrame:
 def read_csv_for_postgres(csv_path: Path) -> pd.DataFrame:
     df = pd.read_csv(csv_path, low_memory=False)
     df = coerce_obvious_dates(df)
+    df.columns = [clean_column_name(c) for c in df.columns]
+    if df.columns.duplicated().any():
+        dupes = sorted(set(df.columns[df.columns.duplicated()]))
+        raise ValueError(f"{csv_path.name}: columns collide after renaming: {dupes}")
     return df
 
 
