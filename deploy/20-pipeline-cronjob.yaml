@@ -43,7 +43,7 @@ spec:
           #   - name: harbor-pull
           containers:
             - name: pipeline
-              image: ghcr.io/REPLACE-OWNER/precision-dairy-pipeline:REPLACE-TAG
+              image: ghcr.io/sof-ia7/precision-dairy-pipeline:REPLACE-WITH-sha-TAG   # tags: GitHub repo -> Packages
               envFrom:
                 - secretRef:
                     name: dairy-db
