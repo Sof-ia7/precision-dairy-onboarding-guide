@@ -1,5 +1,9 @@
 # Precision Dairy Pipeline: PASDE → PostgreSQL → Grafana
 
+[![CI](https://github.com/Sof-ia7/precision-dairy-onboarding-guide/actions/workflows/ci.yml/badge.svg)](https://github.com/Sof-ia7/precision-dairy-onboarding-guide/actions/workflows/ci.yml)
+
+**Container image (public):** `ghcr.io/sof-ia7/precision-dairy-pipeline`. CI publishes `:latest` and `:sha-<commit>` on every push to `main`. Use a `sha-` tag when deploying.
+
 Containerized data pipeline for the Purdue Dairy (ASREC) farm. It turns farm data stored in PASDE on the Geddes cluster into dashboards that farm staff and the nutritionist can open in a browser without cluster credentials.
 
 Based on the MS thesis *Container-Based Data Integration for Centralized Visualization* (S. Gerena Godoy, Purdue ABE, 2026). Chapters 3–5 describe the methods implemented here.
