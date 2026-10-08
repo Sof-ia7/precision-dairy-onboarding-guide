@@ -34,6 +34,14 @@ Every `REPLACE` in `deploy/` corresponds to one of these.
 
 The only path known for sure is Afimilk: `/depot/agpasde/data/Reference/purdue/asrec/dairy/afimilk-daily`.
 
+## 2b. Work not yet in this repo (private server)
+Part of the original work lives on a separate private Fedora server and will be added later:
+- `migrar.py`, the script that converts data into SQL
+- several versions of the database
+- the Grafana setup used there
+
+When it is added, compare its dashboards and SQL with `grafana/` here. Prefer the originals where they differ, and remove any passwords before committing; this repo is public.
+
 ## 3. Constraints
 
 ### Access and IT (the biggest obstacle)
