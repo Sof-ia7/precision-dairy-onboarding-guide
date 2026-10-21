@@ -67,6 +67,18 @@ When it is added, compare its dashboards and SQL with `grafana/` here. Prefer th
 1. Run it locally: `pytest -q`, then `podman compose up --build` (see README). This takes about 15 minutes and needs no cluster.
 2. Get Geddes access and answers to §2 items 1–5.
 3. If possible, copy a few **real** input files (with values anonymized) and run the pipeline locally against them. Fix any column-name mismatches **before** deploying.
+   - **Check the ingredient codes.** The original code coded "SOYBEAN MEAL" as `SOY` (soy hulls); see §5. List every ingredient name in the real TMR files with the code the pipeline gives it:
+     ```bash
+     python3 -c "
+     import sys; sys.path.insert(0, 'src')
+     from chapter4_feed_pipeline import load_feed_intake_data, find_column, FEED_COLUMN_CANDIDATES, standardize_ingredient_code
+     df = load_feed_intake_data(sys.argv[1])
+     col = find_column(df, FEED_COLUMN_CANDIDATES['ingredient_name'])
+     for name in sorted(df[col].dropna().astype(str).unique()): print(repr(name), '->', standardize_ingredient_code(name))
+     " <path to the TMR files>
+     ```
+     Every code must match a code in the nutrient table. Watch soy products: a name the rules do not know (e.g. `SOYPLUS`, `SOYBEANS`) falls back to its first three letters and gets **soy-hull** values. Fix wrong codes with an `--ingredient-map` file (`CH4_INGREDIENT_MAP`), not by editing the code.
+     If any name starts with "SOYBEAN", results made with the original code (or the thesis Appendix A.2 code) gave soybean meal soy-hull nutrient values, and the nutrient errors and the soybean meal / soy hull shares from that code should be recalculated.
 4. Follow [DEPLOY.md](DEPLOY.md) step by step, starting with a manual Job run.
 5. Compare the dashboards with thesis Figures 5.3–5.6 and adjust `grafana/build_dashboards.py`.
 6. Optional, if the old cluster Grafana still exists: export its dashboards (*Share → Export → Save to file*) and compare.
