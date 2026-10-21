@@ -92,6 +92,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--nutrient-table", type=Path, default=env_path("CH4_NUTRIENT_TABLE", "/data/nutrient-table.csv"))
     parser.add_argument("--chapter4-output-dir", type=Path, default=env_path("CH4_OUTPUT_DIR", "/outputs/chapter4"))
     parser.add_argument("--ingredient-map", type=Path, default=env_path("CH4_INGREDIENT_MAP", "") if os.getenv("CH4_INGREDIENT_MAP") else None)
+    # Feed refusals: blank until the real file and column are known (see HANDOFF.md).
+    parser.add_argument("--refusals-path", type=Path, default=Path(os.environ["CH4_REFUSALS_PATH"]) if os.getenv("CH4_REFUSALS_PATH") else None)
+    parser.add_argument("--refusals-column", default=os.getenv("CH4_REFUSALS_COLUMN"))
     parser.add_argument("--chapter4-start-date", default=os.getenv("CH4_START_DATE"))
     parser.add_argument("--chapter4-end-date", default=os.getenv("CH4_END_DATE"))
     parser.add_argument("--group-by-pen", action="store_true", help="Pass --group-by-pen to Chapter 4.")
@@ -158,6 +161,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             str(args.chapter4_output_dir),
         ]
         add_optional_arg(cmd, "--ingredient-map", args.ingredient_map)
+        add_optional_arg(cmd, "--refusals-path", args.refusals_path)
+        add_optional_arg(cmd, "--refusals-column", args.refusals_column)
         add_optional_arg(cmd, "--start-date", args.chapter4_start_date)
         add_optional_arg(cmd, "--end-date", args.chapter4_end_date)
         if args.group_by_pen:

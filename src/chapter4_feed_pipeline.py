@@ -40,6 +40,19 @@ DEFAULT_FEED_INTAKE_PATH = Path("/data/feed-intake")
 DEFAULT_NUTRIENT_TABLE_PATH = Path("/data/nutrient-table.csv")
 DEFAULT_OUTPUT_DIR = Path("/outputs/chapter4")
 
+# ---------------------------------------------------------------------------
+# Feed refusals (weighbacks): NOT YET CONFIGURED.
+# TODO(next maintainer): fill in both values below, or pass them at run time
+# with --refusals-path / --refusals-column (CH4_REFUSALS_PATH /
+# CH4_REFUSALS_COLUMN in run_all.py). See HANDOFF.md, "Adding feed refusals".
+#   DEFAULT_REFUSALS_PATH:   file or folder with the refusals records, e.g. Path("/data/refusals")
+#   DEFAULT_REFUSALS_COLUMN: exact header of the refused dry-weight column, e.g. "Dry Refusal Weight"
+# While the path is blank, the pipeline runs as before and leaves intake empty.
+# Refusals are assumed to be dry matter, one value per feeding date, recipe and pen.
+# ---------------------------------------------------------------------------
+DEFAULT_REFUSALS_PATH: Optional[Path] = None
+DEFAULT_REFUSALS_COLUMN: Optional[str] = None
+
 POSTGRES_TABLE_NAMES: Dict[str, str] = {
     "filtered_feed_intake": "chapter4_filtered_feed_intake",
     "dry_weight_participation": "chapter4_dry_weight_participation",
@@ -621,6 +634,109 @@ def calculate_error_by_weight(
     return df.sort_values(group_cols).reset_index(drop=True)
 
 
+def load_refusals_data(
+    refusals_path: str | Path,
+    refusals_column: Optional[str],
+    *,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Load feed refusals and total them per feeding date, recipe and pen.
+
+    The date, recipe and pen columns are found with the same name candidates as
+    the feed-intake files. The refusals weight column has no default and must be
+    given explicitly, because its real header is not known yet.
+    """
+    if not refusals_column:
+        raise ValueError(
+            "A refusals path was given but no refusals column name. Set DEFAULT_REFUSALS_COLUMN "
+            "or pass --refusals-column (CH4_REFUSALS_COLUMN)."
+        )
+
+    files = collect_input_files(Path(refusals_path))
+    raw = pd.concat([read_table_file(file) for file in files], ignore_index=True)
+
+    date_col = find_column(raw, FEED_COLUMN_CANDIDATES["feeding_date"], description="refusals feeding date")
+    recipe_col = find_column(raw, FEED_COLUMN_CANDIDATES["recipe_display_name"], description="refusals recipe name")
+    pen_col = find_column(raw, FEED_COLUMN_CANDIDATES["pen_name"], description="refusals pen name")
+    weight_col = find_column(raw, (refusals_column,), description=f"refusals column '{refusals_column}'")
+    LOGGER.info(
+        "Refusals column mapping: date=%s, recipe=%s, pen=%s, refusals=%s",
+        date_col,
+        recipe_col,
+        pen_col,
+        weight_col,
+    )
+
+    df = pd.DataFrame(
+        {
+            "feeding_date": clean_date(raw[date_col]),
+            "recipe_display_name": raw[recipe_col].map(clean_text),
+            "pen_name": raw[pen_col].map(clean_text),
+            "refusals": clean_numeric(raw[weight_col]),
+        }
+    )
+
+    before = len(df)
+    df = df.dropna(subset=["feeding_date", "recipe_display_name", "refusals"]).copy()
+    LOGGER.info("Dropped %s refusals rows missing date, recipe or refusals.", before - len(df))
+
+    if start_date is not None:
+        df = df[df["feeding_date"] >= pd.to_datetime(start_date).date()].copy()
+    if end_date is not None:
+        df = df[df["feeding_date"] <= pd.to_datetime(end_date).date()].copy()
+
+    df = (
+        df.groupby(["feeding_date", "recipe_display_name", "pen_name"], dropna=False)["refusals"]
+        .sum()
+        .reset_index()
+    )
+    LOGGER.info("Loaded refusals for %s date/recipe/pen group(s).", len(df))
+    return df
+
+
+def add_intake(
+    error_by_weight: pd.DataFrame,
+    refusals: Optional[pd.DataFrame],
+    *,
+    group_by_pen: bool = False,
+) -> pd.DataFrame:
+    """
+    Add refusals and intake to the formula-level table:
+        intake = dry_actual_weight_sum - refusals
+
+    Refusals come per pen; without --group-by-pen they are summed across pens to
+    match the formula totals. Formulas with no refusals record get blank intake
+    (not filled with zero), following the pipeline's no-filling rule.
+    """
+    df = error_by_weight.copy()
+    if refusals is None:
+        df["refusals"] = np.nan
+        df["intake"] = np.nan
+        return df
+
+    group_cols = get_formula_group_columns(group_by_pen=group_by_pen, has_pen="pen_name" in df.columns)
+    refusals_by_formula = refusals.groupby(group_cols, dropna=False)["refusals"].sum().reset_index()
+
+    df = df.merge(refusals_by_formula, on=group_cols, how="left", indicator=True)
+    unmatched_formulas = int((df["_merge"] == "left_only").sum())
+    if unmatched_formulas:
+        LOGGER.warning("%s formula/day group(s) have no refusals record; their intake is blank.", unmatched_formulas)
+    df = df.drop(columns="_merge")
+
+    unmatched_refusals = refusals_by_formula.merge(error_by_weight[group_cols], on=group_cols, how="left", indicator=True)
+    orphan_count = int((unmatched_refusals["_merge"] == "left_only").sum())
+    if orphan_count:
+        LOGGER.warning(
+            "%s refusals group(s) match no feed-intake formula (check recipe/pen spelling and dates).",
+            orphan_count,
+        )
+
+    df["intake"] = df["dry_actual_weight_sum"] - df["refusals"]
+    return df
+
+
 def prepare_nutrient_table(
     nutrient_table_path: str | Path,
     *,
@@ -933,6 +1049,8 @@ def run_pipeline(
     output_dir: str | Path = DEFAULT_OUTPUT_DIR,
     *,
     ingredient_map_path: Optional[str | Path] = None,
+    refusals_path: Optional[str | Path] = DEFAULT_REFUSALS_PATH,
+    refusals_column: Optional[str] = DEFAULT_REFUSALS_COLUMN,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     group_by_pen: bool = False,
@@ -963,6 +1081,19 @@ def run_pipeline(
     dry_weight_participation = calculate_dry_weight_participation(filtered_feed)
     weight_difference_ing = calculate_weight_difference_ing(filtered_feed)
     error_by_weight = calculate_error_by_weight(filtered_feed, group_by_pen=group_by_pen)
+
+    refusals = None
+    if refusals_path:
+        refusals = load_refusals_data(
+            refusals_path,
+            refusals_column,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    else:
+        LOGGER.warning("No refusals path configured; intake will be blank. See HANDOFF.md.")
+    error_by_weight = add_intake(error_by_weight, refusals, group_by_pen=group_by_pen)
+
     nutrient_delivery_by_ingredient = calculate_nutrient_delivery_by_ingredient(
         filtered_feed,
         nutrient_table,
@@ -1025,6 +1156,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional CSV/Excel/Parquet mapping file from raw ingredient names to ingredient codes.",
     )
+    parser.add_argument(
+        "--refusals-path",
+        type=Path,
+        default=DEFAULT_REFUSALS_PATH,
+        help="File or folder with feed refusals (dry matter, per date/recipe/pen). If omitted, intake is left blank.",
+    )
+    parser.add_argument(
+        "--refusals-column",
+        default=DEFAULT_REFUSALS_COLUMN,
+        help="Header of the refused dry-weight column in the refusals file. Required with --refusals-path.",
+    )
     parser.add_argument("--start-date", default=None, help="Optional inclusive start date, YYYY-MM-DD.")
     parser.add_argument("--end-date", default=None, help="Optional inclusive end date, YYYY-MM-DD.")
     parser.add_argument(
@@ -1076,6 +1218,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         nutrient_table_path=args.nutrient_table,
         output_dir=args.output_dir,
         ingredient_map_path=args.ingredient_map,
+        refusals_path=args.refusals_path,
+        refusals_column=args.refusals_column,
         start_date=args.start_date,
         end_date=args.end_date,
         group_by_pen=args.group_by_pen,

@@ -57,6 +57,12 @@ spec:
                   value: /depot/REPLACE/feed-intake
                 - name: CH4_NUTRIENT_TABLE
                   value: /depot/REPLACE/nutrient-table.csv
+                # Feed refusals: uncomment once the real file and column header are known.
+                # Left commented, the pipeline runs and the intake column stays blank.
+                # - name: CH4_REFUSALS_PATH
+                #   value: /depot/REPLACE/refusals
+                # - name: CH4_REFUSALS_COLUMN
+                #   value: REPLACE-with-refusals-column-header
               resources:
                 requests: {cpu: 500m, memory: 1Gi}
                 limits: {cpu: "2", memory: 4Gi}
