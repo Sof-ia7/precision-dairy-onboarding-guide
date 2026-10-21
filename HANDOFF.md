@@ -30,6 +30,7 @@ Every `REPLACE` in `deploy/` corresponds to one of these.
 | 5 | Namespace name, Ceph **storage class** names, resource quota | all `storageClassName`, `kubectl` context | visible in Rancher once logged in |
 | 6 | **Ingress** class and host name for Grafana. Should farm staff reach it off campus? | `deploy/30-grafana.yaml` | RCAC |
 | 7 | ThingsBoard weather dashboard URL | `WEATHER_URL` in `grafana/build_dashboards.py` | Purdue IT |
+| 8a | **Real path and column header of the feed refusals (weighbacks)** | `CH4_REFUSALS_PATH`, `CH4_REFUSALS_COLUMN` (see "Adding feed refusals" below) | PASDE team / farm |
 | 8 | Real column names of the input files. The code recognizes many variants, but real files were never tested here. | none, unless a run fails | first real run |
 
 The only path known for sure is Afimilk: `/depot/agpasde/data/Reference/purdue/asrec/dairy/afimilk-daily`.
@@ -56,7 +57,41 @@ When it is added, compare its dashboards and SQL with `grafana/` here. Prefer th
 - The **nutrient table must be kept current** by the nutritionist. An ingredient missing from the table gets blank nutrient values, and the pipeline does not drop or guess them.
 - New ingredient names that do not match the built-in rules can be mapped with an `--ingredient-map` file (`CH4_INGREDIENT_MAP`) instead of changing the code.
 - No outlier removal and no filling of missing values: unusual values in the dashboards should be checked in the source system.
-- Feed refusals (weighbacks) are **not** used, so the feeding dashboard measures **delivery accuracy, not intake**.
+- Feed refusals (weighbacks) are wired in but **not configured** (see "Adding feed refusals"). Until they are, the `intake` column is blank and the feeding dashboard measures **delivery accuracy, not intake**.
+
+### Adding feed refusals
+
+The Chapter 4 pipeline computes, per feeding date and recipe (and pen with `--group-by-pen`):
+
+```
+intake = dry_actual_weight_sum - refusals
+```
+
+The result is two new columns, `refusals` and `intake`, in `error_by_weight.csv` / `chapter4_error_by_weight`. No other calculation changes.
+
+**What the refusals file must contain** (one row per feeding date, recipe and pen; several rows for the same group are added together):
+
+| Content | Header | Notes |
+|---|---|---|
+| Feeding date | any name the feed-intake files accept (`Feeding Date`, `Date`, ...) | |
+| Recipe | same as feed intake (`Recipe Display Name`, `Recipe`, ...) | must be spelled like the TMR Tracker recipe |
+| Pen | same as feed intake (`Pen Name`, `Pen`, ...) | required |
+| Refused weight | **unknown: this is what you set** | **dry matter**, same unit as Dry Actual Weight |
+
+**Steps**
+
+1. Find the refusals export and note its location and the exact header of the refused-weight column.
+2. Check that it is dry matter. If it is as-fed, it must be converted before it is used; the code assumes dry matter.
+3. Give the pipeline the two values, by one of these ways:
+   - **Kubernetes:** uncomment `CH4_REFUSALS_PATH` and `CH4_REFUSALS_COLUMN` in `deploy/20-pipeline-cronjob.yaml` and set them.
+   - **Container / `run_all.py`:** set the env vars `CH4_REFUSALS_PATH` and `CH4_REFUSALS_COLUMN`.
+   - **Directly:** `python src/chapter4_feed_pipeline.py --refusals-path <path> --refusals-column "<header>" ...`
+   - **Permanent default:** set `DEFAULT_REFUSALS_PATH` and `DEFAULT_REFUSALS_COLUMN` at the top of `src/chapter4_feed_pipeline.py`.
+4. Run it and read the log:
+   - `Refusals column mapping: ...` shows which columns were used.
+   - `... formula/day group(s) have no refusals record` means those days get blank intake.
+   - `... refusals group(s) match no feed-intake formula` usually means recipe or pen names are spelled differently in the two files.
+5. If the date, recipe or pen headers are not recognized, add the real header to `FEED_COLUMN_CANDIDATES` in `src/chapter4_feed_pipeline.py`.
 
 ### Security
 - No farm data, outputs or passwords in git or in the image (`.gitignore` and `.containerignore` enforce this).
